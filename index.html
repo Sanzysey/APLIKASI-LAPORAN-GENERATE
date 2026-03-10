@@ -9,6 +9,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <!-- Tambahan Library untuk Scan Foto (OCR) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <!-- Tambahan Library untuk Membaca File Excel -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         /* Animasi untuk notifikasi pop-up (toast) */
         @keyframes slideIn {
@@ -42,7 +44,7 @@
             </svg>
             Anda Sedang Offline!
         </div>
-        <p class="text-sm mt-1">Aplikasi berjalan tanpa internet. Fitur <b class="font-bold">Scan Foto & Unduh Foto dinonaktifkan sementara</b>. Anda tetap bisa input manual, salin teks, dan unduh Excel.</p>
+        <p class="text-sm mt-1">Aplikasi berjalan tanpa internet. Fitur <b class="font-bold">Scan Foto & Unduh Foto dinonaktifkan sementara</b>. Anda tetap bisa input manual, salin teks, membaca file Excel, dan unduh Excel.</p>
     </div>
 
     <!-- Container Utama -->
@@ -347,15 +349,24 @@
                             jadwalContainer.innerHTML += `
                                 <div class="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm session-card auto-card" data-jam="${sesi.jam}" data-kelas="${sesi.kelas}">
                                     <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-1 gap-1">
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex flex-wrap items-center gap-2">
                                             <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded text-xs w-max">Jam ${sesi.jam}</span>
+                                            
+                                            <!-- Tombol Scan Foto -->
                                             <label class="btn-scan cursor-pointer bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border border-blue-200 shadow-sm" title="Upload screenshot absensi">
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                                                 Scan Foto
                                                 <input type="file" accept="image/*" class="hidden ocr-input">
                                             </label>
+
+                                            <!-- Tombol Scan Excel Baru -->
+                                            <label class="cursor-pointer bg-green-100 hover:bg-green-200 text-green-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border border-green-200 shadow-sm" title="Upload File Excel Asli">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                                File Excel
+                                                <input type="file" accept=".xlsx, .xls, .csv" class="hidden excel-input">
+                                            </label>
                                         </div>
-                                        <span class="font-bold text-slate-700 text-sm sm:text-right leading-tight">${sesi.kelas}</span>
+                                        <span class="font-bold text-slate-700 text-sm sm:text-right leading-tight mt-1 sm:mt-0">${sesi.kelas}</span>
                                     </div>
                                     ${studentListHTML}
                                 </div>
@@ -411,8 +422,112 @@
                     input.addEventListener('change', handleOCRUpload);
                 });
 
+                // Pasang trigger event listener untuk fitur Read Excel Asli
+                const excelInputs = jadwalContainer.querySelectorAll('.excel-input');
+                excelInputs.forEach(input => {
+                    input.addEventListener('change', handleExcelUpload);
+                });
+
                 generateReport(); // Update teks segera
                 checkConnection(); // Cek lagi koneksi setelah merender ulang
+            }
+
+            // --- FUNGSI BARU: MEMBACA LANGSUNG DARI FILE EXCEL (.xlsx) ---
+            function handleExcelUpload(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const colStr = prompt(
+                    "Membaca dari File Excel!\n\n" +
+                    "Pilih urutan kolom absensi yang TERISI di file ini:\n\n" +
+                    "Ketik 1 : Untuk membaca isian absensi PERTAMA\n" +
+                    "Ketik 2 : Untuk membaca isian absensi KEDUA\n" +
+                    "Ketik 0 : Untuk otomatis mengambil isian PALING AKHIR (Terbaru)\n", 
+                    "0"
+                );
+                
+                if (colStr === null) {
+                    e.target.value = ''; // Reset
+                    return;
+                }
+                
+                let targetIndex = parseInt(colStr);
+                if (isNaN(targetIndex) || targetIndex < 0) targetIndex = 0;
+
+                const card = e.target.closest('.session-card');
+                const selects = card.querySelectorAll('.status-siswa');
+                const fileInput = e.target;
+
+                // Gunakan FileReader untuk membaca isi file
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    try {
+                        const data = new Uint8Array(event.target.result);
+                        // Parsing Excel dengan SheetJS
+                        const workbook = XLSX.read(data, {type: 'array'});
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        
+                        // Ubah sheet menjadi bentuk array 2 Dimensi (baris dan kolom)
+                        const rows = XLSX.utils.sheet_to_json(worksheet, {header: 1});
+
+                        selects.forEach(select => {
+                            const studentName = select.dataset.nama.toUpperCase();
+                            let nameParts = studentName.split(' ').filter(p => p.length >= 2);
+                            if(nameParts.length === 0) nameParts = [studentName];
+                            
+                            let matchedRow = null;
+
+                            // Cari baris yang berisi nama murid
+                            for (const row of rows) {
+                                // Gabungkan semua cell di baris ini menjadi 1 teks panjang
+                                const rowText = row.join(' ').toUpperCase();
+                                let matchCount = 0;
+
+                                nameParts.forEach(part => {
+                                    if (rowText.includes(part)) matchCount++;
+                                });
+                                
+                                if (matchCount >= 1) {
+                                    matchedRow = row;
+                                    break;
+                                }
+                            }
+
+                            if (matchedRow) {
+                                // Cari di baris tersebut, kotak mana saja yang isinya persis H, A, S, atau I
+                                const matches = matchedRow
+                                    .map(cell => String(cell).trim().toUpperCase())
+                                    .filter(val => ['H', 'A', 'S', 'I'].includes(val));
+
+                                if (matches && matches.length > 0) {
+                                    let statusChar = '';
+                                    
+                                    // Tentukan mau ambil absen urutan ke berapa
+                                    if (targetIndex === 0 || targetIndex > matches.length) {
+                                        statusChar = matches[matches.length - 1]; // Paling akhir
+                                    } else {
+                                        statusChar = matches[targetIndex - 1]; // Sesuai urutan
+                                    }
+                                    
+                                    if (statusChar === 'H') select.value = 'Hadir';
+                                    else if (statusChar === 'A') select.value = 'Alpa';
+                                    else if (statusChar === 'S') select.value = 'Sakit';
+                                    else if (statusChar === 'I') select.value = 'Izin';
+                                }
+                            }
+                        });
+
+                        generateReport(); 
+                        showToast("Baca data Excel berhasil!");
+                    } catch (err) {
+                        console.error("Excel Error: ", err);
+                        alert("Gagal membaca file Excel. Pastikan file berformat .xlsx dan tidak rusak.");
+                    } finally {
+                        fileInput.value = ''; // Reset input
+                    }
+                };
+                reader.readAsArrayBuffer(file);
             }
 
             // Fungsi untuk memproses gambar dengan Tesseract AI
