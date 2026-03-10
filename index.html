@@ -29,7 +29,6 @@
         .offline-disabled {
             opacity: 0.5;
             cursor: not-allowed !important;
-            pointer-events: none;
         }
     </style>
 </head>
@@ -163,6 +162,15 @@
             // Dengarkan perubahan koneksi internet secara real-time
             window.addEventListener('online', checkConnection);
             window.addEventListener('offline', checkConnection);
+
+            // --- EVENT LISTENER TAMBAHAN UNTUK TOMBOL SCAN SAAT OFFLINE ---
+            document.addEventListener('click', function(e) {
+                const scanBtn = e.target.closest('.btn-scan');
+                if (scanBtn && !navigator.onLine) {
+                    e.preventDefault(); // Mencegah jendela file manager terbuka
+                    alert("Fitur Scan Foto AI membutuhkan koneksi internet untuk membaca teks. Silakan sambungkan internet Anda terlebih dahulu.");
+                }
+            });
 
             // --- DATABASE SISWA (YANG ADA NAMANYA) ---
             const databaseSiswa = {
@@ -416,6 +424,15 @@
                     alert("Fitur Scan Foto membutuhkan koneksi internet. Silakan sambungkan internet Anda terlebih dahulu.");
                     return;
                 }
+                
+                // --- FITUR BARU: PILIH KOLOM ABSENSI PINTAR ---
+                const colStr = prompt("Banyak kolom absensi terdeteksi di gambar!\nAnda ingin membaca isian ke-berapa dari kiri?\n\n(Contoh: Ketik 1 untuk membaca absen hari pertama di gambar tsb, ketik 2 untuk hari kedua, dst)", "1");
+                if (colStr === null) {
+                    e.target.value = ''; // Reset jika user batal (cancel)
+                    return;
+                }
+                let targetIndex = parseInt(colStr);
+                if (isNaN(targetIndex) || targetIndex < 1) targetIndex = 1;
 
                 const loadingOverlay = document.getElementById('ocrLoading');
                 loadingOverlay.classList.remove('hidden');
@@ -454,13 +471,18 @@
                             // Cari karakter H, A, S, atau I (menggunakan regex batas kata)
                             const matches = matchedLine.match(/\b(H|A|S|I)\b/gi);
                             if (matches && matches.length > 0) {
-                                // Ambil status yang PALING AKHIR di baris tersebut 
-                                const lastStatus = matches[matches.length - 1].toUpperCase();
+                                // Ambil status berdasarkan urutan isian kolom yang diminta user
+                                let statusChar = '';
+                                if (targetIndex - 1 < matches.length) {
+                                    statusChar = matches[targetIndex - 1].toUpperCase();
+                                } else {
+                                    statusChar = matches[matches.length - 1].toUpperCase(); // Fallback ke isian paling ujung jika yg dicari kelebihan
+                                }
                                 
-                                if (lastStatus === 'H') select.value = 'Hadir';
-                                else if (lastStatus === 'A') select.value = 'Alpa';
-                                else if (lastStatus === 'S') select.value = 'Sakit';
-                                else if (lastStatus === 'I') select.value = 'Izin';
+                                if (statusChar === 'H') select.value = 'Hadir';
+                                else if (statusChar === 'A') select.value = 'Alpa';
+                                else if (statusChar === 'S') select.value = 'Sakit';
+                                else if (statusChar === 'I') select.value = 'Izin';
                             }
                         }
                     });
@@ -483,6 +505,8 @@
 
                 const opsi = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
                 const tanggalTeks = new Date(tanggalRaw).toLocaleDateString('id-ID', opsi);
+                // Tanggal tanpa nama hari untuk format kalimat baru
+                const tanggalTeksBiasa = new Date(tanggalRaw).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
                 let teksLaporan = `Laporan Kegiatan Mengajar\nHari/Tanggal: ${tanggalTeks}\n\n`;
 
@@ -491,6 +515,9 @@
                 if (sessionCards.length === 0) {
                      teksLaporan += "Tidak ada aktivitas mengajar pada hari ini.\n";
                 } else {
+                    // Helper function khusus untuk merangkai format nama bernomor urut (1. Nama, 2. Nama)
+                    const formatNama = (arr) => arr.length > 0 ? ` (${arr.map((n, i) => `${i+1}. ${n}`).join(', ')})` : '';
+
                     // Loop setiap kelas yang aktif dan tambahkan ke teks
                     sessionCards.forEach(card => {
                         const jam = card.dataset.jam;
@@ -527,20 +554,19 @@
                             if (txtSakit) namaSakit.push(txtSakit);
                             if (txtIzin) namaIzin.push(txtIzin);
                         }
-                        
-                        const totalTidakHadir = alpa + sakit + izin;
 
-                        // Rangkai detail keterangan lengkap dengan nama yg tidak hadir
-                        let detailAbsen = [];
-                        if (alpa > 0) detailAbsen.push(`Alpa: ${alpa} org${namaAlpa.length > 0 ? ' ('+namaAlpa.join(', ')+')' : ''}`);
-                        if (sakit > 0) detailAbsen.push(`Sakit: ${sakit} org${namaSakit.length > 0 ? ' ('+namaSakit.join(', ')+')' : ''}`);
-                        if (izin > 0) detailAbsen.push(`Izin: ${izin} org${namaIzin.length > 0 ? ' ('+namaIzin.join(', ')+')' : ''}`);
-
-                        let teksDetail = detailAbsen.length > 0 ? ` => ${detailAbsen.join(' | ')}` : '';
-
-                        // Format teks sesuai permintaan
+                        // --- FORMAT TEKS BARU SESUAI PERMINTAAN ---
                         teksLaporan += `Jam ${jam} - ${kelas}\n`;
-                        teksLaporan += `Mengajar kelas ${kelas}. Total peserta hadir ${hadir}, peserta tidak hadir ${totalTidakHadir}${teksDetail}.\n\n`;
+                        teksLaporan += `Di tanggal ${tanggalTeksBiasa} total peserta ${kelas} yg hadir total : ${hadir} Peserta\n`;
+                        
+                        if (alpa > 0) teksLaporan += `yg alpa ada ${alpa} Peserta${formatNama(namaAlpa)}\n`;
+                        else teksLaporan += `yg alpa ada 0 Peserta\n`;
+                        
+                        if (izin > 0) teksLaporan += `peserta izin : ${izin} Peserta${formatNama(namaIzin)}\n`;
+                        else teksLaporan += `peserta izin : 0\n`;
+                        
+                        if (sakit > 0) teksLaporan += `peserta Sakit : ${sakit} Peserta${formatNama(namaSakit)}\n\n`;
+                        else teksLaporan += `peserta Sakit : 0\n\n`;
                     });
                     
                     teksLaporan += `Selesai melaksanakan tugas mengajar hingga jam 16.00.`;
