@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generator Laporan Mengajar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tambahan Library untuk Export Image -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Tambahan Library untuk Scan Foto (OCR) -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <style>
+        /* Animasi untuk notifikasi pop-up (toast) */
+        @keyframes slideIn {
+            from { transform: translateY(100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        .toast-enter {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+        .toast-exit {
+            animation: fadeOut 0.5s ease-out forwards;
+        }
+        /* Style saat offline */
+        .offline-disabled {
+            opacity: 0.5;
+            cursor: not-allowed !important;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex items-center justify-center p-4 flex-col">
+
+    <!-- Peringatan Offline (Awalnya Disembunyikan) -->
+    <div id="offlineBanner" class="hidden w-full max-w-lg bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 mb-4 rounded-r shadow-sm">
+        <div class="flex items-center gap-2 font-bold">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
+            Anda Sedang Offline!
+        </div>
+        <p class="text-sm mt-1">Aplikasi berjalan tanpa internet. Fitur <b class="font-bold">Scan Foto & Unduh Foto dinonaktifkan sementara</b>. Anda tetap bisa input manual, salin teks, dan unduh Excel.</p>
+    </div>
+
+    <!-- Container Utama -->
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl overflow-hidden border border-slate-100">
+        
+        <!-- Header -->
+        <div class="bg-indigo-600 p-5 text-white">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Laporan Mengajar Harian
+            </h1>
+            <p class="text-indigo-200 text-sm mt-1">Isi data di bawah, teks akan otomatis dibuat.</p>
+        </div>
+
+        <!-- Form Input -->
+        <div class="p-6 space-y-5">
+            
+            <!-- Tanggal -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-1" for="tanggal">Pilih Tanggal</label>
+                <input type="date" id="tanggal" class="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors cursor-pointer">
+            </div>
+
+            <!-- Kontainer Jadwal Dinamis -->
+            <div id="jadwalContainer" class="space-y-4">
+                <!-- Form input 4 jadwal kelas akan digenerate otomatis di sini oleh sistem -->
+            </div>
+
+            <!-- Hasil Teks -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-600 mb-2 flex justify-between items-center">
+                    Hasil Laporan
+                    <span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full">Otomatis Update</span>
+                </label>
+                <textarea id="outputArea" rows="6" readonly class="w-full p-3 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none text-slate-700 leading-relaxed text-sm"></textarea>
+            </div>
+
+            <!-- Kumpulan Tombol Aksi -->
+            <div class="flex flex-col gap-3" id="actionButtons">
+                <!-- Tombol Salin -->
+                <button id="copyBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Salin Teks Laporan
+                </button>
+                
+                <!-- Tombol Download -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button id="downloadImgBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        Unduh Foto
+                    </button>
+                    <button id="downloadExcelBtn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-3 rounded-lg flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md text-sm">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Unduh Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notifikasi Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 hidden z-50">
+        <div class="bg-green-500 rounded-full p-1">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+        </div>
+        <span class="font-medium">Teks berhasil disalin!</span>
+    </div>
+
+    <!-- Overlay Loading OCR -->
+    <div id="ocrLoading" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden z-[60] flex items-center justify-center">
+        <div class="bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center max-w-xs text-center">
+            <svg class="animate-spin h-10 w-10 text-indigo-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <h3 class="font-bold text-slate-800 text-lg">Membaca Foto...</h3>
+            <p class="text-sm text-slate-500 mt-2">Memindai nama dan status (H/A/S/I). Proses ini memakan waktu beberapa saat.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputTanggal = document.getElementById('tanggal');
+            const jadwalContainer = document.getElementById('jadwalContainer');
+            const outputArea = document.getElementById('outputArea');
+            const copyBtn = document.getElementById('copyBtn');
+            const downloadImgBtn = document.getElementById('downloadImgBtn');
+            const downloadExcelBtn = document.getElementById('downloadExcelBtn');
+            const toast = document.getElementById('toast');
+            const offlineBanner = document.getElementById('offlineBanner');
+
+            // --- SISTEM DETEKSI OFFLINE ---
+            function checkConnection() {
+                const isOnline = navigator.onLine;
+                if (!isOnline) {
+                    offlineBanner.classList.remove('hidden');
+                    downloadImgBtn.classList.add('offline-disabled');
+                    // Matikan tombol scan jika sedang offline
+                    document.querySelectorAll('.btn-scan').forEach(btn => {
+                        btn.classList.add('offline-disabled');
+                        btn.title = "Fitur tidak tersedia saat offline";
+                    });
+                } else {
+                    offlineBanner.classList.add('hidden');
+                    downloadImgBtn.classList.remove('offline-disabled');
+                    document.querySelectorAll('.btn-scan').forEach(btn => {
+                        btn.classList.remove('offline-disabled');
+                        btn.title = "Upload screenshot absensi";
+                    });
+                }
+            }
+
+            // Dengarkan perubahan koneksi internet secara real-time
+            window.addEventListener('online', checkConnection);
+            window.addEventListener('offline', checkConnection);
+
+            // --- DATABASE SISWA (YANG ADA NAMANYA) ---
+            const databaseSiswa = {
+                'SEKRETARIS DAN ADMINISTRASI BISNIS 4': [
+                    'ARLIMA MUKARJI', 'AZZAHRATUN NAJWA', 'DENIS AULIA SAFITRI',
+                    'FITRI HADMAWATI', 'GRISELDA WIFA AZALIA', 'JEAN SAPUTRA',
+                    'KARINA', 'LOLA ALMUHRIPAH', 'LURI PEBRIYANTI',
+                    'M ARFIAN BUDI SAPUTRO', 'MAULANI ASTUTI', 'NABILA WIDIA PUTRI',
+                    'NAILA MAZIYATUL ALIMAH', 'NAJILA ROHMAH', 'NAZLA PINALIA',
+                    'NUR AIDA PUTRI', 'PUTRI', 'RIZKI WULANDARI',
+                    'SAID ALIANUR', 'SHABRINA', 'SITI INDAH NINGRUM',
+                    'SITI RAHMA ADE EKA WIJAYANTI', 'SYNTIA FEBRILIANTI'
+                ],
+                'SEKRETARIS DAN ADMINISTRASI BISNIS 3': [
+                    'ADELIA CHIKA MAULIDA', 'AHMAD SYAIFUL JAMIL', 'ANDINI', 'CHELSEA EDRINA',
+                    'DITA RAMADHANI', 'EKA', 'ELISABET EKA JULIA LESTARI', 'KAILA ASRI SYAHIRA',
+                    'M. NOUVAL', 'MELINDA', 'MIA', 'MUTIA', 'MUTIARA LAILATUL HIKMAH',
+                    'NAWAROH KHOERUN NISA', 'PADILAH', 'REVA YANUS ARUL', 'RITA SALFITA',
+                    'SALSABILA PUTRI', 'SHELY KASLIFA LESTARI', 'SISKANAH', 'SITI NURHASANAH',
+                    'YULIANA'
+                ],
+                'SEKRETARIS DAN ADMINISTRASI BISNIS 2': [
+                    'AMELLIA', 'ANDINI MAULIVIA', 'AULIA ILMIS SYIFA', 'CAHYANINGSIH LISTYA SUHARDI',
+                    'DEVI ALIA PURNIAWATI', 'DEVI DWI KUNCARI', 'DEYA', 'DHIYYA NANDHIRA',
+                    'ERIKA AYU MUSLIMAH', 'HABIBAH TUTTOYIBAH', 'MUHAMMAD NASEH', 'LISTA ZURMIDA',
+                    'MASAYU PRADHINA', 'NATASYA OKTAVIA ANGGARA PUTRI', 'NIA NOVIANA SAPUTRI',
+                    'NUR HAYATI', 'SARI PATIMAH', 'SHANDY GUNAWAN ARIADI', 'TIYAS NOPITASARI',
+                    'RIKO GUNAWAN'
+                ],
+                'SEKRETARIS DAN ADMINISTRASI BISNIS 1': [
+                    'ADI RIKY KURNIAWAN', 'AL-ZHAWHA MAEYASSA', 'AMELIA', 'AMELIL INSANY',
+                    'ANGGORO KURNIAWAN ADI SAPUTRO', 'BILQIS NADYA SAFILA', 'DUHULI SHIYAM MAULA SARI ALFIYA',
+                    'EKA PUTRI SEPTIANA', 'FERNANDA AGUNG WICAKSONO', 'FITA SOFI ROHMANIA',
+                    'HERU RAMADANI', 'LISA NURJANAH', 'LISNAWATI', 'MIA RAMADANI SAFITRI',
+                    'NIKEN DEA FIKA FITRIA SARI', 'RINDI', 'RUSTANIATI', 'SEPTIA RAMADHANI',
+                    'SITI HAWA', 'TESALONIKA PUTRI PANJAITAN', 'TITIN FATIMAH', 'YUVIKA ERMILIA'
+                ],
+                'APLIKASI PERKANTORAN 7': [
+                    'AHMAD SANDI MAULANA', 'ALFI ROHMANIA', 'ANA AMELIA', 'CAHYA KARTIKA SARI',
+                    'DEBIYAN ERLANDO', 'DELIA ANGGRAINI PRATIWI', 'DIANA SAFITRI', 'FEBBY NUR AYU UTAMI',
+                    'GUSTIAN', 'HENGKY ALANSYAH', 'KERIN SISMILIA CITRA', 'LESTARI WULANDARI',
+                    'LISA AGUSTINA', 'NAJWAN NUR TAUFIQUL HAKIM', 'MARIA ROFANTI FOA', 'MARYATUN',
+                    'MIFRAHUN NASIKIL ABDILLAH', 'MUHAMMAD IQBAL', 'NORMA DIANITA', 'NURANISSA',
+                    'NUR ARTIA', 'OKTAVIA RAMANDHANI', 'RAIHAN FIRDAUS', 'RIO ARDIAWAN'
+                ],
+                'PERHOTELAN DAN PARAWISATAN': [
+                    'BAYU BAMBANG PRASETYO', 'DONA ARDITA', 'KHOLIQUL IKHSAN', 'NABIL AZRA',
+                    'MUHAMMAD RISALDI', 'RAMA ANDIKA SAPUTRA', 'REZQI FERDIANSYAH PUTRA',
+                    'WANDIMIYA MASIATUN ROHMATIN', 'YESI FEBRIANTI', 'RIZAL AL ALAMIN'
+                ],
+                'AKUNTANSI DAN PERPAJAKAN': [
+                    'ALDA RISMA', 'ANGGUN C.CASMI', 'ANGGUN KARUNIA', 'EGIA SALSABELA PUTRI',
+                    'ERSA', 'EVITRI', 'MARGARETHA PRISKA NGAO', 'MERIANTI', 'MILI TRISIYA',
+                    'NAILA YUAN SAPUTRI', 'RAHMA SUGANDA', 'RASICA AMELIA SUMIRAN', 'RIZKY NOVITASARI',
+                    'TASYA INDRIANI'
+                ],
+                'TATA BUSANA DAN MENJAHIT': [
+                    'ANGGITA KUSITA DEWI MURNI', 'ASISAH', 'DWI NUR MAYA', 'FAIZ CATHERINE',
+                    'HESLIYA SARI', 'IMA MIYA NDARI', 'JELIANA', 'JUNITA FRANSISKA DEWI',
+                    'LIDIA PUSPITASARI', 'NUR YESSA ARDINA', 'RAHMA AYU ANGGRAINI', 'SERIFAH SIVA MUTIA',
+                    'SINTA EVA SAFITRI', 'SEHROTUN', 'SITI JULPA', 'SUCI AKMALIYAH', 'WULANDARI'
+                ],
+                'TEKNIK PERKEBUNAN 1': [
+                    'ABDUL HAKIM', 'ACHMADIN', 'AGUS SETIYANINGSIH', 'CICI CLAUDYA AHMAD SUGIARTO',
+                    'DYOS DWI KURNIAWAN', 'ANDIKA ARIYA FIRMANDANI', 'FAJAR SYARIF', 'GLORIA',
+                    'AHMAD FIKRI ISBATITAQI', 'ALPI RISKI', 'EVENTINO', 'DARMADI', 'KEVIN VALENTINO',
+                    'BAYU ALFAUZANNUR', 'FEBRIAN BAHRUL ULUM'
+                ],
+                'TEKNIK PERKEBUNAN 2': [
+                    'KORNELIUS KLASENS', 'MUHAMMAD QHOIRUL TAQWA', 'RIO MARSELLO', 'MUHAMMAD BAGAS SAPUTRA',
+                    'MIFTAHUDIN', 'RIANG JANUARI PUTRI', 'MARIA MARGARETHA', 'KEVIN FADILLAH',
+                    'MARIA HELGA WUA', 'MARIA STEFANIA WATU', 'RABIATUL MUTMAINAH', 'SISILIA ALEN',
+                    'RAFIQ HARIRI', 'RIZA FAHRI', 'RIVAL DIASYAH HAIKAL PUTRA'
+                ]
+            };
+
+            // --- DATABASE JADWAL MINGGUAN ---
+            const jadwalMingguan = {
+                1: [ // Senin
+                    { jam: '08.00', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 3' },
+                    { jam: '09.30', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 2' },
+                    { jam: '12.45', kelas: 'APLIKASI PERKANTORAN 7' },
+                    { jam: '14.30', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 4' }
+                ],
+                2: [ // Selasa
+                    { jam: '08.00', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 1' },
+                    { jam: '09.30', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 4' },
+                    { jam: '12.45', kelas: 'APLIKASI PERKANTORAN 7' },
+                    { jam: '14.30', kelas: 'AKUNTANSI DAN PERPAJAKAN' }
+                ],
+                3: [ // Rabu
+                    { jam: '08.00', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 1' },
+                    { jam: '09.30', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 2' },
+                    { jam: '12.45', kelas: 'APLIKASI PERKANTORAN 7' },
+                    { jam: '14.30', kelas: 'PERHOTELAN DAN PARAWISATAN' }
+                ],
+                4: [ // Kamis
+                    { jam: '08.00', kelas: 'KOSONG' },
+                    { jam: '09.30', kelas: 'KOSONG' },
+                    { jam: '12.45', kelas: 'TATA BUSANA DAN MENJAHIT' },
+                    { jam: '14.30', kelas: 'KOSONG' }
+                ],
+                5: [ // Jumat
+                    { jam: '08.00', kelas: 'APLIKASI PERKANTORAN 7' },
+                    { jam: '09.30', kelas: 'KOSONG' },
+                    { jam: '12.45', kelas: 'RAPAT AKHIR PEKAN' },
+                    { jam: '14.30', kelas: 'SEKRETARIS DAN ADMINISTRASI BISNIS 3' }
+                ],
+                6: [ // Sabtu
+                    { jam: '08.00', kelas: 'TEKNIK PERKEBUNAN 1' },
+                    { jam: '09.30', kelas: 'KOSONG' },
+                    { jam: '12.45', kelas: 'APLIKASI PERKANTORAN 7' },
+                    { jam: '14.30', kelas: 'TEKNIK PERKEBUNAN 2' }
+                ],
+                0: [] // Minggu (Libur)
+            };
+
+            // Menampilkan form input berdasarkan hari dari tanggal yang dipilih
+            function renderJadwal() {
+                const tanggalVal = inputTanggal.value;
+                if (!tanggalVal) return;
+
+                const dateObj = new Date(tanggalVal);
+                const dayOfWeek = dateObj.getDay(); 
+                const jadwalHariIni = jadwalMingguan[dayOfWeek] || [];
+
+                jadwalContainer.innerHTML = ''; // Reset kontainer
+
+                if (jadwalHariIni.length === 0) {
+                    jadwalContainer.innerHTML = '<div class="p-4 bg-orange-50 text-orange-700 rounded-lg text-center font-semibold border border-orange-200">Hari Libur (Tidak ada jadwal mengajar).</div>';
+                    generateReport();
+                    return;
+                }
+
+                // Buat kotak input untuk tiap jam
+                jadwalHariIni.forEach((sesi) => {
+                    if (sesi.kelas === 'KOSONG') {
+                        // Jika jam tersebut kosong
+                        jadwalContainer.innerHTML += `
+                            <div class="bg-slate-100 p-3 rounded-xl border border-slate-200 flex items-center justify-between opacity-60">
+                                <div class="font-bold text-slate-500 text-sm">Jam ${sesi.jam}</div>
+                                <div class="text-sm font-bold text-slate-400 italic">KOSONG</div>
+                            </div>
+                        `;
+                    } else {
+                        // Cek apakah kelas memiliki data siswa pre-defined
+                        const siswa = databaseSiswa[sesi.kelas];
+
+                        if (siswa) {
+                            // --- RENDER ABSENSI OTOMATIS DENGAN NAMA ---
+                            // Gunakan tag <details> agar daftar nama bisa disembunyikan (tidak makan tempat)
+                            let studentListHTML = `<details class="mt-2 border-t border-slate-100 pt-3">
+                                <summary class="font-semibold text-sm cursor-pointer text-indigo-700 bg-indigo-50 p-2.5 rounded hover:bg-indigo-100 transition-colors list-none flex justify-between items-center">
+                                    <span>Buka Daftar Absensi (${siswa.length} Siswa)</span>
+                                    <span class="text-xs">Klik ▼</span>
+                                </summary>
+                                <div class="mt-3 space-y-2 max-h-60 overflow-y-auto pr-2 pb-2">`;
+
+                            siswa.forEach(nama => {
+                                studentListHTML += `
+                                    <div class="flex justify-between items-center text-sm bg-slate-50 p-2 rounded border border-slate-200">
+                                        <span class="font-medium text-slate-700 truncate w-[60%]">${nama}</span>
+                                        <select class="status-siswa w-[38%] p-1.5 border border-slate-300 rounded text-xs bg-white focus:ring-2 focus:ring-indigo-500 font-semibold" data-nama="${nama}">
+                                            <option value="Hadir">✅ Hadir</option>
+                                            <option value="Alpa">❌ Alpa</option>
+                                            <option value="Sakit">🤒 Sakit</option>
+                                            <option value="Izin">✉️ Izin</option>
+                                        </select>
+                                    </div>
+                                `;
+                            });
+                            studentListHTML += `</div></details>`;
+
+                            jadwalContainer.innerHTML += `
+                                <div class="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm session-card auto-card" data-jam="${sesi.jam}" data-kelas="${sesi.kelas}">
+                                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-1 gap-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded text-xs w-max">Jam ${sesi.jam}</span>
+                                            <label class="btn-scan cursor-pointer bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors border border-blue-200 shadow-sm" title="Upload screenshot absensi">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                                                Scan Foto
+                                                <input type="file" accept="image/*" class="hidden ocr-input">
+                                            </label>
+                                        </div>
+                                        <span class="font-bold text-slate-700 text-sm sm:text-right leading-tight">${sesi.kelas}</span>
+                                    </div>
+                                    ${studentListHTML}
+                                </div>
+                            `;
+                        } else {
+                            // --- RENDER INPUT MANUAL (Untuk kelas yg belum ada namanya) ---
+                            jadwalContainer.innerHTML += `
+                                <div class="bg-white p-4 rounded-xl border border-indigo-100 shadow-sm session-card manual-card" data-jam="${sesi.jam}" data-kelas="${sesi.kelas}">
+                                    <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-3 border-b border-slate-100 pb-2 gap-1">
+                                        <span class="font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded text-xs w-max">Jam ${sesi.jam}</span>
+                                        <span class="font-bold text-slate-700 text-sm sm:text-right leading-tight">${sesi.kelas}</span>
+                                    </div>
+                                    <div class="grid grid-cols-4 gap-2 mb-3">
+                                        <div>
+                                            <label class="block text-[10px] sm:text-xs font-semibold text-green-600 mb-1">Hadir (Angka)</label>
+                                            <input type="number" min="0" placeholder="0" class="input-hadir w-full p-2 border border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 text-center font-bold text-green-700 transition-colors">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] sm:text-xs font-semibold text-red-600 mb-1">Alpa (Angka)</label>
+                                            <input type="number" min="0" placeholder="0" class="input-alpa w-full p-2 border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500 text-center text-red-700 transition-colors">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] sm:text-xs font-semibold text-orange-600 mb-1">Sakit (Angka)</label>
+                                            <input type="number" min="0" placeholder="0" class="input-sakit w-full p-2 border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500 text-center text-orange-700 transition-colors">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] sm:text-xs font-semibold text-blue-600 mb-1">Izin (Angka)</label>
+                                            <input type="number" min="0" placeholder="0" class="input-izin w-full p-2 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 text-center text-blue-700 transition-colors">
+                                        </div>
+                                    </div>
+                                    <div class="space-y-2 border-t border-slate-100 pt-3">
+                                        <div class="text-[10px] sm:text-xs text-slate-500 mb-1 font-semibold">*Tulis nama jika ada yang tidak hadir (Manual):</div>
+                                        <input type="text" class="nama-alpa w-full p-2 text-xs border border-red-200 rounded-lg focus:ring-2 focus:ring-red-500" placeholder="Nama yg Alpa... (Kosongkan jika tidak ada)">
+                                        <input type="text" class="nama-sakit w-full p-2 text-xs border border-orange-200 rounded-lg focus:ring-2 focus:ring-orange-500" placeholder="Nama yg Sakit... (Kosongkan jika tidak ada)">
+                                        <input type="text" class="nama-izin w-full p-2 text-xs border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500" placeholder="Nama yg Izin... (Kosongkan jika tidak ada)">
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                });
+
+                // Pasang trigger: setiap angka/teks diketik/dipilih, teks langsung terupdate
+                const inputs = jadwalContainer.querySelectorAll('input, select');
+                inputs.forEach(input => {
+                    input.addEventListener('input', generateReport);
+                    input.addEventListener('change', generateReport); // Untuk dropdown
+                });
+
+                // Pasang trigger event listener untuk fitur Scan OCR
+                const ocrInputs = jadwalContainer.querySelectorAll('.ocr-input');
+                ocrInputs.forEach(input => {
+                    input.addEventListener('change', handleOCRUpload);
+                });
+
+                generateReport(); // Update teks segera
+                checkConnection(); // Cek lagi koneksi setelah merender ulang
+            }
+
+            // Fungsi untuk memproses gambar dengan Tesseract AI
+            async function handleOCRUpload(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                if (!navigator.onLine) {
+                    alert("Fitur Scan Foto membutuhkan koneksi internet. Silakan sambungkan internet Anda terlebih dahulu.");
+                    return;
+                }
+
+                const loadingOverlay = document.getElementById('ocrLoading');
+                loadingOverlay.classList.remove('hidden');
+
+                try {
+                    // Gunakan Tesseract.js untuk membaca gambar
+                    const result = await Tesseract.recognize(file, 'eng');
+                    const lines = result.data.lines;
+
+                    const card = e.target.closest('.session-card');
+                    const selects = card.querySelectorAll('.status-siswa');
+
+                    selects.forEach(select => {
+                        const studentName = select.dataset.nama.toUpperCase();
+                        // Pecah nama menjadi kata-kata (minimal 2 huruf agar kata sapaan/singkatan terdeteksi)
+                        let nameParts = studentName.split(' ').filter(p => p.length >= 2);
+                        if(nameParts.length === 0) nameParts = [studentName];
+                        
+                        let matchedLine = null;
+                        for (const lineObj of lines) {
+                            const lineText = lineObj.text.toUpperCase();
+                            // Hitung kecocokan kata
+                            let matchCount = 0;
+                            nameParts.forEach(part => {
+                                if (lineText.includes(part)) matchCount++;
+                            });
+                            
+                            // Jika minimal 1 kata dari nama cocok dengan baris teks dari gambar
+                            if (matchCount >= 1) {
+                                matchedLine = lineText;
+                                break;
+                            }
+                        }
+
+                        if (matchedLine) {
+                            // Cari karakter H, A, S, atau I (menggunakan regex batas kata)
+                            const matches = matchedLine.match(/\b(H|A|S|I)\b/gi);
+                            if (matches && matches.length > 0) {
+                                // Ambil status yang PALING AKHIR di baris tersebut 
+                                const lastStatus = matches[matches.length - 1].toUpperCase();
+                                
+                                if (lastStatus === 'H') select.value = 'Hadir';
+                                else if (lastStatus === 'A') select.value = 'Alpa';
+                                else if (lastStatus === 'S') select.value = 'Sakit';
+                                else if (lastStatus === 'I') select.value = 'Izin';
+                            }
+                        }
+                    });
+
+                    generateReport(); // Update teks textarea
+                    showToast("Scan foto selesai!");
+                } catch (error) {
+                    console.error("OCR Error: ", error);
+                    alert("Gagal membaca teks dari gambar. Pastikan kualitas gambar cukup jelas.");
+                } finally {
+                    loadingOverlay.classList.add('hidden');
+                    e.target.value = ''; // Reset file input agar bisa upload gambar yang sama lagi
+                }
+            }
+
+            // Merangkai teks laporan otomatis
+            function generateReport() {
+                const tanggalRaw = inputTanggal.value;
+                if (!tanggalRaw) return;
+
+                const opsi = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+                const tanggalTeks = new Date(tanggalRaw).toLocaleDateString('id-ID', opsi);
+
+                let teksLaporan = `Laporan Kegiatan Mengajar\nHari/Tanggal: ${tanggalTeks}\n\n`;
+
+                const sessionCards = jadwalContainer.querySelectorAll('.session-card');
+                
+                if (sessionCards.length === 0) {
+                     teksLaporan += "Tidak ada aktivitas mengajar pada hari ini.\n";
+                } else {
+                    // Loop setiap kelas yang aktif dan tambahkan ke teks
+                    sessionCards.forEach(card => {
+                        const jam = card.dataset.jam;
+                        const kelas = card.dataset.kelas;
+                        
+                        let hadir = 0, alpa = 0, sakit = 0, izin = 0;
+                        let namaAlpa = [], namaSakit = [], namaIzin = [];
+
+                        // Cek apakah ini kartu dengan daftar nama (Auto) atau Input Manual
+                        if (card.classList.contains('auto-card')) {
+                            const selects = card.querySelectorAll('.status-siswa');
+                            selects.forEach(select => {
+                                const nama = select.dataset.nama;
+                                const status = select.value;
+                                
+                                if (status === 'Hadir') hadir++;
+                                else if (status === 'Alpa') { alpa++; namaAlpa.push(nama); }
+                                else if (status === 'Sakit') { sakit++; namaSakit.push(nama); }
+                                else if (status === 'Izin') { izin++; namaIzin.push(nama); }
+                            });
+                        } else {
+                            // Ambil nilai dari input angka (Manual), jika kosong = 0
+                            hadir = parseInt(card.querySelector('.input-hadir').value) || 0;
+                            alpa = parseInt(card.querySelector('.input-alpa').value) || 0;
+                            sakit = parseInt(card.querySelector('.input-sakit').value) || 0;
+                            izin = parseInt(card.querySelector('.input-izin').value) || 0;
+
+                            // Ambil nilai dari input teks nama manual
+                            const txtAlpa = card.querySelector('.nama-alpa').value.trim();
+                            const txtSakit = card.querySelector('.nama-sakit').value.trim();
+                            const txtIzin = card.querySelector('.nama-izin').value.trim();
+
+                            if (txtAlpa) namaAlpa.push(txtAlpa);
+                            if (txtSakit) namaSakit.push(txtSakit);
+                            if (txtIzin) namaIzin.push(txtIzin);
+                        }
+                        
+                        const totalTidakHadir = alpa + sakit + izin;
+
+                        // Rangkai detail keterangan lengkap dengan nama yg tidak hadir
+                        let detailAbsen = [];
+                        if (alpa > 0) detailAbsen.push(`Alpa: ${alpa} org${namaAlpa.length > 0 ? ' ('+namaAlpa.join(', ')+')' : ''}`);
+                        if (sakit > 0) detailAbsen.push(`Sakit: ${sakit} org${namaSakit.length > 0 ? ' ('+namaSakit.join(', ')+')' : ''}`);
+                        if (izin > 0) detailAbsen.push(`Izin: ${izin} org${namaIzin.length > 0 ? ' ('+namaIzin.join(', ')+')' : ''}`);
+
+                        let teksDetail = detailAbsen.length > 0 ? ` => ${detailAbsen.join(' | ')}` : '';
+
+                        // Format teks sesuai permintaan
+                        teksLaporan += `Jam ${jam} - ${kelas}\n`;
+                        teksLaporan += `Mengajar kelas ${kelas}. Total peserta hadir ${hadir}, peserta tidak hadir ${totalTidakHadir}${teksDetail}.\n\n`;
+                    });
+                    
+                    teksLaporan += `Selesai melaksanakan tugas mengajar hingga jam 16.00.`;
+                }
+
+                outputArea.value = teksLaporan;
+                
+                // Tinggi text-area menyesuaikan panjang kalimat
+                outputArea.style.height = 'auto';
+                outputArea.style.height = (outputArea.scrollHeight + 5) + 'px';
+            }
+
+            // Jalankan saat tanggal diganti
+            inputTanggal.addEventListener('change', renderJadwal);
+
+            // Tampilkan jadwal hari ini saat web pertama dibuka
+            inputTanggal.valueAsDate = new Date();
+            renderJadwal();
+            checkConnection();
+
+            // Script untuk tombol Copy/Salin
+            copyBtn.addEventListener('click', () => {
+                outputArea.select();
+                outputArea.setSelectionRange(0, 99999);
+                try {
+                    document.execCommand('copy');
+                    showToast();
+                } catch (err) {
+                    console.error('Gagal menyalin teks: ', err);
+                }
+            });
+
+            let toastTimeout;
+            function showToast(msg = "Teks berhasil disalin!") {
+                toast.querySelector('.font-medium').textContent = msg;
+                toast.classList.remove('hidden', 'toast-exit');
+                toast.classList.add('toast-enter');
+                clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => {
+                    toast.classList.remove('toast-enter');
+                    toast.classList.add('toast-exit');
+                    setTimeout(() => { toast.classList.add('hidden'); }, 500);
+                }, 2500);
+            }
+
+            // --- FITUR UNDUH FOTO (IMAGE) ---
+            downloadImgBtn.addEventListener('click', () => {
+                if (!navigator.onLine) {
+                    alert("Fitur Unduh Foto dinonaktifkan saat offline karena membutuhkan komponen eksternal.");
+                    return;
+                }
+                
+                const actionButtons = document.getElementById('actionButtons');
+                const offlineBannerEl = document.getElementById('offlineBanner');
+                const container = document.querySelector('.max-w-lg'); // Area yang mau difoto
+                
+                // Sembunyikan elemen tertentu saat difoto agar laporan terlihat bersih
+                actionButtons.style.display = 'none';
+                if(!offlineBannerEl.classList.contains('hidden')) offlineBannerEl.style.display = 'none';
+                
+                // Beri warna latar belakang putih utuh saat di-render
+                html2canvas(container, { backgroundColor: '#ffffff', scale: 2 }).then(canvas => {
+                    // Tampilkan kembali tombolnya
+                    actionButtons.style.display = 'flex';
+                    offlineBannerEl.style.display = '';
+                    
+                    // Buat link download
+                    const link = document.createElement('a');
+                    link.download = `Laporan_Mengajar_${inputTanggal.value}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                }).catch(err => {
+                    console.error("Gagal membuat foto: ", err);
+                    actionButtons.style.display = 'flex'; // Pastikan tombol kembali jika error
+                    offlineBannerEl.style.display = '';
+                });
+            });
+
+            // --- FITUR UNDUH DATA EXCEL (CSV) ---
+            downloadExcelBtn.addEventListener('click', () => {
+                const tanggalRaw = inputTanggal.value;
+                if (!tanggalRaw) return alert("Pilih tanggal terlebih dahulu!");
+
+                // Header untuk Excel (CSV)
+                let csvContent = "data:text/csv;charset=utf-8,";
+                csvContent += "Tanggal,Jam,Kelas,Hadir,Alpa,Sakit,Izin,Keterangan (Nama)\n";
+
+                const sessionCards = jadwalContainer.querySelectorAll('.session-card');
+                
+                if (sessionCards.length === 0) {
+                    alert("Tidak ada jadwal untuk diekspor pada hari ini.");
+                    return;
+                }
+
+                sessionCards.forEach(card => {
+                    const jam = card.dataset.jam;
+                    const kelas = `"${card.dataset.kelas}"`; // Diapit kutip agar aman jika ada koma di nama kelas
+                    
+                    let hadir = 0, alpa = 0, sakit = 0, izin = 0;
+                    let namaTidakHadir = [];
+
+                    if (card.classList.contains('auto-card')) {
+                        const selects = card.querySelectorAll('.status-siswa');
+                        selects.forEach(select => {
+                            const nama = select.dataset.nama;
+                            const status = select.value;
+                            if (status === 'Hadir') hadir++;
+                            else if (status === 'Alpa') { alpa++; namaTidakHadir.push(`${nama} (A)`); }
+                            else if (status === 'Sakit') { sakit++; namaTidakHadir.push(`${nama} (S)`); }
+                            else if (status === 'Izin') { izin++; namaTidakHadir.push(`${nama} (I)`); }
+                        });
+                    } else {
+                        hadir = parseInt(card.querySelector('.input-hadir').value) || 0;
+                        alpa = parseInt(card.querySelector('.input-alpa').value) || 0;
+                        sakit = parseInt(card.querySelector('.input-sakit').value) || 0;
+                        izin = parseInt(card.querySelector('.input-izin').value) || 0;
+
+                        const txtAlpa = card.querySelector('.nama-alpa').value.trim();
+                        const txtSakit = card.querySelector('.nama-sakit').value.trim();
+                        const txtIzin = card.querySelector('.nama-izin').value.trim();
+
+                        if (txtAlpa) namaTidakHadir.push(`${txtAlpa} (A)`);
+                        if (txtSakit) namaTidakHadir.push(`${txtSakit} (S)`);
+                        if (txtIzin) namaTidakHadir.push(`${txtIzin} (I)`);
+                    }
+
+                    // Gabungkan nama yang tidak hadir, diapit tanda kutip agar tidak merusak format CSV
+                    const keterangan = `"${namaTidakHadir.join(', ')}"`;
+
+                    // Tambahkan ke baris data
+                    let row = `${tanggalRaw},${jam},${kelas},${hadir},${alpa},${sakit},${izin},${keterangan}`;
+                    csvContent += row + "\n";
+                });
+
+                // Buat link download
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `Data_Laporan_${tanggalRaw}.csv`);
+                document.body.appendChild(link); // Diperlukan di beberapa browser
+                link.click();
+                document.body.removeChild(link);
+            });
+        });
+    </script>
+</body>
+</html>
