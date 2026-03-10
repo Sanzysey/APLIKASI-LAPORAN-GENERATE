@@ -426,13 +426,20 @@
                 }
                 
                 // --- FITUR BARU: PILIH KOLOM ABSENSI PINTAR ---
-                const colStr = prompt("Banyak kolom absensi terdeteksi di gambar!\nAnda ingin membaca isian ke-berapa dari kiri?\n\n(Contoh: Ketik 1 untuk membaca absen hari pertama di gambar tsb, ketik 2 untuk hari kedua, dst)", "1");
+                const colStr = prompt(
+                    "Pilih urutan kolom absensi yang TERISI di gambar:\n\n" +
+                    "Ketik 1 : Untuk membaca isian absensi PERTAMA\n" +
+                    "Ketik 2 : Untuk membaca isian absensi KEDUA\n" +
+                    "Ketik 0 : Untuk otomatis mengambil isian PALING AKHIR (Terbaru)\n", 
+                    "0"
+                );
+                
                 if (colStr === null) {
                     e.target.value = ''; // Reset jika user batal (cancel)
                     return;
                 }
                 let targetIndex = parseInt(colStr);
-                if (isNaN(targetIndex) || targetIndex < 1) targetIndex = 1;
+                if (isNaN(targetIndex) || targetIndex < 0) targetIndex = 0;
 
                 const loadingOverlay = document.getElementById('ocrLoading');
                 loadingOverlay.classList.remove('hidden');
@@ -447,36 +454,56 @@
 
                     selects.forEach(select => {
                         const studentName = select.dataset.nama.toUpperCase();
-                        // Pecah nama menjadi kata-kata (minimal 2 huruf agar kata sapaan/singkatan terdeteksi)
                         let nameParts = studentName.split(' ').filter(p => p.length >= 2);
                         if(nameParts.length === 0) nameParts = [studentName];
                         
                         let matchedLine = null;
+                        let lastWordIndex = -1;
+
                         for (const lineObj of lines) {
                             const lineText = lineObj.text.toUpperCase();
-                            // Hitung kecocokan kata
                             let matchCount = 0;
+                            let currentLastWordIndex = -1;
+
                             nameParts.forEach(part => {
-                                if (lineText.includes(part)) matchCount++;
+                                let idx = lineText.indexOf(part);
+                                if (idx !== -1) {
+                                    matchCount++;
+                                    // Simpan posisi index terakhir dari nama untuk memisahkan nama dan absensi
+                                    if (idx + part.length > currentLastWordIndex) {
+                                        currentLastWordIndex = idx + part.length;
+                                    }
+                                }
                             });
                             
-                            // Jika minimal 1 kata dari nama cocok dengan baris teks dari gambar
-                            if (matchCount >= 1) {
+                            if (matchCount >= 1) { // Jika nama ditemukan
                                 matchedLine = lineText;
+                                lastWordIndex = currentLastWordIndex;
                                 break;
                             }
                         }
 
-                        if (matchedLine) {
-                            // Cari karakter H, A, S, atau I (menggunakan regex batas kata)
-                            const matches = matchedLine.match(/\b(H|A|S|I)\b/gi);
+                        if (matchedLine && lastWordIndex !== -1) {
+                            // Ambil HANYA teks SETELAH nama siswa (area grid absensi)
+                            let textAfterName = matchedLine.substring(lastWordIndex);
+                            
+                            // Koreksi OCR umum (angka 5 sering terbaca sebagai S)
+                            textAfterName = textAfterName.replace(/5/g, 'S');
+                            
+                            // Pecah teks berdasarkan spasi, garis grid excel (|), atau tanda baca lainnya
+                            const tokens = textAfterName.split(/[\s|/\\.,_\[\]\-]+/);
+                            
+                            // Saring HANYA token yang bernilai H, A, S, atau I (mengabaikan noise/garis tabel)
+                            const matches = tokens.filter(t => ['H', 'A', 'S', 'I'].includes(t.toUpperCase())).map(t => t.toUpperCase());
+
                             if (matches && matches.length > 0) {
-                                // Ambil status berdasarkan urutan isian kolom yang diminta user
                                 let statusChar = '';
-                                if (targetIndex - 1 < matches.length) {
-                                    statusChar = matches[targetIndex - 1].toUpperCase();
+                                
+                                // Ambil status berdasarkan index yang diminta user
+                                if (targetIndex === 0 || targetIndex > matches.length) {
+                                    statusChar = matches[matches.length - 1]; // Ambil paling akhir
                                 } else {
-                                    statusChar = matches[matches.length - 1].toUpperCase(); // Fallback ke isian paling ujung jika yg dicari kelebihan
+                                    statusChar = matches[targetIndex - 1]; // Ambil sesuai urutan terisi
                                 }
                                 
                                 if (statusChar === 'H') select.value = 'Hadir';
